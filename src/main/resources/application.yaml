@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: payment-system
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payments
+    username: payments
+    password: payments
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.example.payments: INFO
