@@ -1,4 +1,4 @@
-package com.payment.payment_system;
+package com.payment.paymentsystem;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
