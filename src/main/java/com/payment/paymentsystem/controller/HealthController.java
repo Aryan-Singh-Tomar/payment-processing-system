@@ -1,4 +1,4 @@
-package com.payment.payment_system.controller;
+package com.payment.paymentsystem.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
