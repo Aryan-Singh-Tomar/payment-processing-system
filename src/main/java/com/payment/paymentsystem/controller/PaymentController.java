@@ -32,13 +32,13 @@ public class PaymentController {
     @Operation(
             summary = "Create a new payment",
             description = """
-                    Creates a new payment against an existing order in PENDING status.
-                    The order must exist and be in CREATED state. The payment amount and
+                    Creates a new payment against an existing order in CREATED status.
+                    The order must exist and be payable. The payment amount and
                     currency must match the order exactly.
-                    
-                    Idempotency: each request must include a unique idempotencyKey. From
-                    Week 2 onward, replaying the same key returns the original payment.
-                    Today, replays return 409 Conflict.
+
+                    Idempotency: each request must include an idempotencyKey.
+                    Replaying the same key with the same payload returns the original payment.
+                    Reusing the same key with a different payload returns 422.
                     """
     )
     @ApiResponses({

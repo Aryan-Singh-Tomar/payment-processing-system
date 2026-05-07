@@ -38,6 +38,11 @@ spring:
           min-idle: 2
           max-wait: 1000ms
 
+app:
+  idempotency:
+    cache-ttl: 24h
+    key-prefix: "idem:payment:"
+
 server:
   port: 8080
 

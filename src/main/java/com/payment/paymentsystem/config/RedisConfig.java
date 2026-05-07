@@ -67,6 +67,8 @@ public class RedisConfig {
                 .allowIfBaseType("com.payment.paymentsystem.")
                 .allowIfBaseType("java.util.")
                 .allowIfBaseType("java.time.")
+                .allowIfBaseType("java.math.")                   // ← add this for BigDecimal
+                .allowIfBaseType("java.lang.")
                 .build();
 
         mapper.activateDefaultTyping(

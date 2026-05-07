@@ -28,12 +28,15 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaymentMapper paymentMapper;
     private final PaymentPersistenceService persistenceService;
+    private final IdempotencyCacheService cacheService;
     public PaymentService(PaymentRepository paymentRepository, OrderRepository orderRepository,
-                          PaymentMapper paymentMapper, PaymentPersistenceService persistenceService) {
+                          PaymentMapper paymentMapper, PaymentPersistenceService persistenceService,
+                          IdempotencyCacheService cacheService) {
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
         this.paymentMapper = paymentMapper;
         this.persistenceService = persistenceService;
+        this.cacheService = cacheService;
     }
 
     @Transactional
@@ -41,10 +44,20 @@ public class PaymentService {
         log.info("Creating payment for orderId={}, idempotencyKey={}",
                 request.getOrderId(), request.getIdempotencyKey());
 
+        Optional<PaymentResponse> cached = cacheService.get(request.getIdempotencyKey());
+        if(cached.isPresent()){
+            verifyCachedIntentMatches(cached.get(), request);
+            log.info("Idempotent replay (cache) for key={}: returning paymentId={}",
+                    request.getIdempotencyKey(), cached.get().getId());
+            return cached.get();
+        }
+
         Optional<Payment> existing = paymentRepository.findByIdempotencyKey(request.getIdempotencyKey());
 
         if(existing.isPresent()){
-            return handleReplay(existing.get(), request);
+            PaymentResponse response = handleReplay(existing.get(), request);
+            cacheService.put(request.getIdempotencyKey(), response);   // ← repopulate
+            return response;
         }
 
         Order order = orderRepository.findById(request.getOrderId())
@@ -55,7 +68,11 @@ public class PaymentService {
 
 
         Payment payment = paymentMapper.toEntity(request);
-        return saveOrReturnRaceWinner(payment, request.getIdempotencyKey());
+        PaymentResponse response = saveOrReturnRaceWinner(payment, request.getIdempotencyKey());
+
+        cacheService.put(request.getIdempotencyKey(), response);
+
+        return  response;
     }
 
     @Transactional(readOnly = true)
@@ -66,6 +83,22 @@ public class PaymentService {
         return paymentMapper.toResponse(payment);
     }
 
+    private void verifyCachedIntentMatches(PaymentResponse cached, CreatePaymentRequest request){
+        if (!cached.getOrderId().equals(request.getOrderId()) ||
+                cached.getAmount().compareTo(request.getAmount()) != 0 ||
+                !cached.getCurrency().equals(request.getCurrency())) {
+
+            log.warn("Idempotency key {} reused with mismatched intent (cache hit). " +
+                            "Cached: orderId={}, amount={}, currency={}. " +
+                            "New: orderId={}, amount={}, currency={}",
+                    request.getIdempotencyKey(),
+                    cached.getOrderId(), cached.getAmount(), cached.getCurrency(),
+                    request.getOrderId(), request.getAmount(), request.getCurrency());
+
+            throw new InvalidPaymentRequestException(
+                    "Idempotency key reused with different request payload");
+        }
+    }
 
     private PaymentResponse handleReplay(Payment existing, CreatePaymentRequest request){
         if (!existing.getOrderId().equals(request.getOrderId()) ||
