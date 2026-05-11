@@ -4,6 +4,7 @@ package com.payment.paymentsystem.controller;
 import com.payment.paymentsystem.dto.CreatePaymentRequest;
 import com.payment.paymentsystem.dto.ErrorResponse;
 import com.payment.paymentsystem.dto.PaymentResponse;
+import com.payment.paymentsystem.service.OptimisticPaymentApprovalService;
 import com.payment.paymentsystem.service.PaymentApprovalService;
 import com.payment.paymentsystem.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,10 +27,39 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final PaymentApprovalService paymentApprovalService;
+    private final OptimisticPaymentApprovalService optimisticApprovalService;   // NEW
 
-    public PaymentController(PaymentService paymentService, PaymentApprovalService paymentApprovalService) {
+
+    public PaymentController(PaymentService paymentService,
+                             PaymentApprovalService paymentApprovalService,
+                             OptimisticPaymentApprovalService optimisticApprovalService) {
         this.paymentService = paymentService;
         this.paymentApprovalService = paymentApprovalService;
+        this.optimisticApprovalService = optimisticApprovalService;
+    }
+
+    @Operation(
+            summary = "Approve a PENDING payment (optimistic locking, Day 15)",
+            description = """
+                    Promotes a payment from PENDING to SUCCESS using optimistic
+                    locking via @Version. No row locks are taken; conflicts are
+                    detected at UPDATE time and resolved via retry.
+                    
+                    Compare to POST /api/payments/{id}/approve which uses
+                    pessimistic locking.
+                    """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Payment approved",
+                    content = @Content(schema = @Schema(implementation = PaymentResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Payment not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "Payment not PENDING, or order already has SUCCESS, or retry exhaustion",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{id}/approve-optimistic")
+    public ResponseEntity<PaymentResponse> approveOptimistic(@PathVariable UUID id) {
+        return ResponseEntity.ok(optimisticApprovalService.approve(id));
     }
 
     @Operation(
