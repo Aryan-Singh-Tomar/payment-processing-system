@@ -249,24 +249,48 @@ fit for this race. Documented honestly in the decision matrix.
 ---
 
 ## Project Structure
+
+```text
 src/main/java/com/payment/paymentsystem/
 ├── PaymentSystemApplication.java
-├── config/                            # RedisConfig, OpenApiConfig
-├── controller/                        # PaymentController, HealthController
-├── dto/                               # CreatePaymentRequest, PaymentResponse, ErrorResponse
-├── entity/                            # Payment, Order, PaymentStatus, OrderStatus
-├── exception/                         # Domain exceptions + GlobalExceptionHandler
-├── mapper/                            # PaymentMapper
-├── repository/                        # PaymentRepository, OrderRepository
-└── service/                           # PaymentService, PaymentApprovalService,
-# OptimisticPaymentApprovalService,
-# IdempotencyCacheService,
-# PaymentPersistenceService,
-# PaymentApprovalTransaction
+├── config/
+│   ├── RedisConfig.java
+│   └── OpenApiConfig.java
+├── controller/
+│   ├── PaymentController.java
+│   └── HealthController.java
+├── dto/
+│   ├── CreatePaymentRequest.java
+│   ├── PaymentResponse.java
+│   └── ErrorResponse.java
+├── entity/
+│   ├── Payment.java
+│   ├── Order.java
+│   ├── PaymentStatus.java
+│   └── OrderStatus.java
+├── exception/
+│   ├── GlobalExceptionHandler.java
+│   └── Domain exceptions
+├── mapper/
+│   └── PaymentMapper.java
+├── repository/
+│   ├── PaymentRepository.java
+│   └── OrderRepository.java
+└── service/
+    ├── PaymentService.java
+    ├── PaymentApprovalService.java
+    ├── OptimisticPaymentApprovalService.java
+    ├── IdempotencyCacheService.java
+    ├── PaymentPersistenceService.java
+    └── PaymentApprovalTransaction.java
+
 src/main/resources/
 ├── application.yaml
-└── db/migration/                      # Flyway migrations (V1, V2)
-docs/                                  # Design decisions
+└── db/migration/
+    ├── V1__create_orders_and_payments.sql
+    └── V2__add_indexes_and_constraints.sql
+
+docs/
 ├── concurrency-decisions.md
 ├── idempotency.md
 ├── isolation-levels.md
