@@ -13,4 +13,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     List<Payment> findByOrderId(UUID orderId);
     List<Payment> findByStatus(PaymentStatus status);
 
+    // NEW — used by Day 13's race-prone approval flow
+    long countByOrderIdAndStatus(UUID orderId, PaymentStatus status);
+
 }

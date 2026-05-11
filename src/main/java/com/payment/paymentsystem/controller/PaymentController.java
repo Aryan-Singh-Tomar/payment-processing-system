@@ -4,6 +4,7 @@ package com.payment.paymentsystem.controller;
 import com.payment.paymentsystem.dto.CreatePaymentRequest;
 import com.payment.paymentsystem.dto.ErrorResponse;
 import com.payment.paymentsystem.dto.PaymentResponse;
+import com.payment.paymentsystem.service.PaymentApprovalService;
 import com.payment.paymentsystem.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -24,9 +25,37 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentApprovalService paymentApprovalService;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(PaymentService paymentService, PaymentApprovalService paymentApprovalService) {
         this.paymentService = paymentService;
+        this.paymentApprovalService = paymentApprovalService;
+    }
+
+    @Operation(
+            summary = "Approve a PENDING payment (Day 13: race-prone, intentionally)",
+            description = """
+                    Promotes a payment from PENDING to SUCCESS.
+                    
+                    ⚠️ This endpoint has a known race condition under concurrent calls
+                    for the same order. It exists to demonstrate the bug Day 14's
+                    pessimistic locking will fix. Do not rely on this in any
+                    production-like scenario.
+                    """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Payment approved",
+                    content = @Content(schema = @Schema(implementation = PaymentResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Payment not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "Payment not in PENDING or order already has SUCCESS",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "Race condition — uniqueness violation under concurrency",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<PaymentResponse> approve(@PathVariable UUID id) {
+        return ResponseEntity.ok(paymentApprovalService.approve(id));
     }
 
     @Operation(
