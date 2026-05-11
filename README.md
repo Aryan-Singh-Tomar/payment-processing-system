@@ -295,7 +295,7 @@ docs/
 ├── idempotency.md
 ├── isolation-levels.md
 └── payment-state-machine.md
-
+```
 ---
 
 ## Why This Project Exists
@@ -312,6 +312,3 @@ to be able to discuss them with the depth that comes from having built them.
 
 ---
 
-## License
-
-MIT
