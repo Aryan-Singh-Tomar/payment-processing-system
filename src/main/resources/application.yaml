@@ -38,10 +38,28 @@ spring:
           min-idle: 2
           max-wait: 1000ms
 
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: true
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    properties:
+      auto.offset.reset: earliest
+
 app:
   idempotency:
     cache-ttl: 24h
     key-prefix: "idem:payment:"
+
+  kafka:
+    topics:
+      payment-requested: payment.requested
 
 server:
   port: 8080

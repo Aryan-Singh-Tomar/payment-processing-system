@@ -5,17 +5,22 @@ import com.payment.paymentsystem.dto.PaymentResponse;
 import com.payment.paymentsystem.entity.Order;
 import com.payment.paymentsystem.entity.OrderStatus;
 import com.payment.paymentsystem.entity.Payment;
+import com.payment.paymentsystem.event.PaymentRequestedEvent;
 import com.payment.paymentsystem.exception.InvalidPaymentRequestException;
 import com.payment.paymentsystem.exception.OrderNotFoundException;
 import com.payment.paymentsystem.exception.PaymentNotFoundException;
+import com.payment.paymentsystem.kafka.PaymentEventProducer;
 import com.payment.paymentsystem.mapper.PaymentMapper;
 import com.payment.paymentsystem.repository.OrderRepository;
 import com.payment.paymentsystem.repository.PaymentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -29,14 +34,22 @@ public class PaymentService {
     private final PaymentMapper paymentMapper;
     private final PaymentPersistenceService persistenceService;
     private final IdempotencyCacheService cacheService;
+    private final ApplicationEventPublisher applicationEventPublisher;
+    private final PaymentEventProducer paymentEventProducer;
+
+
+
     public PaymentService(PaymentRepository paymentRepository, OrderRepository orderRepository,
                           PaymentMapper paymentMapper, PaymentPersistenceService persistenceService,
-                          IdempotencyCacheService cacheService) {
+                          IdempotencyCacheService cacheService, ApplicationEventPublisher applicationEventPublisher,
+                          PaymentEventProducer paymentEventProducer) {
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
         this.paymentMapper = paymentMapper;
         this.persistenceService = persistenceService;
         this.cacheService = cacheService;
+        this.applicationEventPublisher = applicationEventPublisher;
+        this.paymentEventProducer = paymentEventProducer;
     }
 
     @Transactional
@@ -72,7 +85,25 @@ public class PaymentService {
 
         cacheService.put(request.getIdempotencyKey(), response);
 
+        // Publish event AFTER transaction commits.
+        // We register the event with Spring's ApplicationEventPublisher;
+        // the @TransactionalEventListener below will fire it to Kafka
+        // ONLY if this @Transactional method commits successfully.
+        PaymentRequestedEvent event = PaymentRequestedEvent.of(
+                response.getId(),
+                response.getOrderId(),
+                response.getAmount(),
+                response.getCurrency()
+        );
+
+        applicationEventPublisher.publishEvent(event);
+
         return  response;
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handlePaymentRequestAfterCommit(PaymentRequestedEvent event){
+        paymentEventProducer.publishPaymentRequested(event);
     }
 
     @Transactional(readOnly = true)
