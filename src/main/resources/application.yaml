@@ -52,6 +52,20 @@ spring:
     properties:
       auto.offset.reset: earliest
 
+
+    consumer:
+      group-id: payment-processor
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.payment.paymentsystem.event
+        spring.json.use.type.headers: true
+    listener:
+      ack-mode: record
+      concurrency: 3
+
 app:
   idempotency:
     cache-ttl: 24h

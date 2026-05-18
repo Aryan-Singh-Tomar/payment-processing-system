@@ -29,7 +29,7 @@ import java.util.concurrent.CompletableFuture;
 public class PaymentEventProducer {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventProducer.class);
 
-    private KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final String paymentRequestedTopic;
 
     public PaymentEventProducer(KafkaTemplate<String, Object> kafkaTemplate,
