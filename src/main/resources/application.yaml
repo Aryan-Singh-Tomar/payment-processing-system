@@ -61,6 +61,14 @@ app:
     topics:
       payment-requested: payment.requested
 
+  gateway:
+    success-rate: 0.85
+    failure-rate: 0.10
+    timeout-rate: 0.05
+    min-latency-ms: 200
+    max-latency-ms: 600
+    timeout-duration-ms: 3000
+
 server:
   port: 8080
 
