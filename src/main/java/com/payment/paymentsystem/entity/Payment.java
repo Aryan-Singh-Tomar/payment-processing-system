@@ -49,6 +49,11 @@ public class Payment {
     @Column(name = "version", nullable = false)
     private Long version;
 
+    @Column(name = "processed_at")
+    private OffsetDateTime processedAt;
+
+
+
     @PrePersist
     void onCreate() {
         if (id == null) {
@@ -89,4 +94,6 @@ public class Payment {
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public Long getVersion() { return version; }
+    public OffsetDateTime getProcessedAt() { return processedAt; }
+    public void setProcessedAt(OffsetDateTime processedAt) { this.processedAt = processedAt; }
 }
