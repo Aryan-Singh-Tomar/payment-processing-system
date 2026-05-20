@@ -14,8 +14,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 import java.util.UUID;
@@ -117,8 +119,20 @@ public class PaymentController {
             @Valid @RequestBody CreatePaymentRequest request) {
 
         PaymentResponse response = paymentService.createPayment(request);
-        URI location = URI.create("/api/payments/" + response.getId());
-        return ResponseEntity.created(location).body(response);
+
+        // Build the Location URI pointing at GET /api/payments/{id}.
+        // ServletUriComponentsBuilder grabs the current request's context
+        // (host, port, scheme, base path) so the URI works regardless of
+        // deployment environment (localhost, staging, prod, behind a proxy).
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(response.getId())
+                .toUri();
+
+        return ResponseEntity
+                .status(HttpStatus.ACCEPTED)
+                .location(location)
+                .body(response);
     }
 
     @Operation(
