@@ -1,11 +1,13 @@
 package com.payment.paymentsystem.kafka;
 
 import com.payment.paymentsystem.event.PaymentRequestedEvent;
+import com.payment.paymentsystem.exception.PaymentNotFoundException;
 import com.payment.paymentsystem.gateway.FakePaymentGatewayClient;
 import com.payment.paymentsystem.gateway.GatewayChargeRequest;
 import com.payment.paymentsystem.gateway.GatewayChargeResponse;
 import com.payment.paymentsystem.service.PaymentDuplicateHandler;
 import com.payment.paymentsystem.service.PaymentProcessingService;
+import com.payment.paymentsystem.service.ProcessedEventService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,17 +34,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class PaymentEventConsumer {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventConsumer.class);
+    private static final String EVENT_TYPE = "PaymentRequested";
+
 
     private final FakePaymentGatewayClient gateway;
     private final PaymentProcessingService processingService;
     private final PaymentDuplicateHandler duplicateHandler;
+    private final ProcessedEventService processedEventService;
 
     public PaymentEventConsumer(FakePaymentGatewayClient gateway,
                                 PaymentProcessingService processingService,
-                                PaymentDuplicateHandler duplicateHandler) {
+                                PaymentDuplicateHandler duplicateHandler,
+                                ProcessedEventService processedEventService) {
         this.gateway = gateway;
         this.processingService = processingService;
         this.duplicateHandler = duplicateHandler;
+        this.processedEventService = processedEventService;
     }
 
 
@@ -58,6 +65,34 @@ public class PaymentEventConsumer {
         log.info("Consumed event: paymentId={}, partition={}, offset={}",
                 event.paymentId(), partition, offset);
 
+        // Step 0 (NEW Day 22): Claim the event.
+        // If this returns false, another thread/instance already processed
+        // this event. We skip without doing any work.
+        String eventKey = event.paymentId().toString();
+        boolean claimed = processedEventService.tryClaim(eventKey, EVENT_TYPE);
+        if (!claimed) {
+            log.info("Event for paymentId={} already processed — skipping entirely", event.paymentId());
+            return;
+        }
+
+        try {
+            processEvent(event);
+        } catch (PaymentNotFoundException ex) {
+            // Orphan event: Kafka has this event but the payment was never created
+            // (or was deleted). Retrying won't help — the payment is not coming back.
+            // Log loudly and let the offset commit so the consumer moves on.
+            // Day 23 will route these to a Dead Letter Topic for investigation.
+            log.error("Orphan event: paymentId={} referenced by Kafka event has no DB record. " +
+                            "Skipping (will not retry). Event has been claimed in processed_events " +
+                            "to prevent re-processing on redelivery.",
+                    event.paymentId());
+        }
+
+
+
+    }
+
+    private void processEvent(PaymentRequestedEvent event) {
         // Step 1: short transaction to mark PROCESSING.
         boolean shouldProcess = processingService.markProcessing(event.paymentId());
         if (!shouldProcess) {
@@ -93,6 +128,5 @@ public class PaymentEventConsumer {
             }
         }
         log.info("Finished processing paymentId={}", event.paymentId());
-
     }
 }
