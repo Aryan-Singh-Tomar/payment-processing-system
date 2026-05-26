@@ -80,6 +80,9 @@ public class FakePaymentGatewayClient {
         log.info("Gateway charge initiated: paymentId={}, amount={} {}",
                 request.paymentId(), request.amount(), request.currency());
 
+        if (true) throw new RuntimeException("simulated transient failure for retry testing");
+
+
         double roll = ThreadLocalRandom.current().nextDouble();
         GatewayOutcome outcome = pickOutcome(roll);
 

@@ -12,9 +12,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
 /**
@@ -53,6 +56,13 @@ public class PaymentEventConsumer {
     }
 
 
+    @RetryableTopic(
+            attempts = "3",
+            backoff = @Backoff(delay = 1000, multiplier = 2.0),
+            dltStrategy = DltStrategy.FAIL_ON_ERROR,
+            exclude = { PaymentNotFoundException.class },
+            autoCreateTopics = "True"
+    )
     @KafkaListener(
             topics = "${app.kafka.topics.payment-requested}",
             groupId = "${spring.kafka.consumer.group-id}"
@@ -69,34 +79,16 @@ public class PaymentEventConsumer {
         // If this returns false, another thread/instance already processed
         // this event. We skip without doing any work.
         String eventKey = event.paymentId().toString();
-        boolean claimed = processedEventService.tryClaim(eventKey, EVENT_TYPE);
-        if (!claimed) {
-            log.info("Event for paymentId={} already processed — skipping entirely", event.paymentId());
+        if (processedEventService.isProcessed(eventKey, EVENT_TYPE)) {
+            log.info("Event for paymentId={} already processed — skipping", event.paymentId());
             return;
         }
 
-        try {
-            processEvent(event);
-        } catch (PaymentNotFoundException ex) {
-            // Orphan event: Kafka has this event but the payment was never created
-            // (or was deleted). Retrying won't help — the payment is not coming back.
-            // Log loudly and let the offset commit so the consumer moves on.
-            // Day 23 will route these to a Dead Letter Topic for investigation.
-            log.error("Orphan event: paymentId={} referenced by Kafka event has no DB record. " +
-                            "Skipping (will not retry). Event has been claimed in processed_events " +
-                            "to prevent re-processing on redelivery.",
-                    event.paymentId());
-        }
-
-
-
-    }
-
-    private void processEvent(PaymentRequestedEvent event) {
         // Step 1: short transaction to mark PROCESSING.
         boolean shouldProcess = processingService.markProcessing(event.paymentId());
         if (!shouldProcess) {
             log.info("Skipping gateway call for paymentId={}", event.paymentId());
+            processedEventService.markProcessed(eventKey, EVENT_TYPE);
             return;
         }
 
@@ -127,6 +119,27 @@ public class PaymentEventConsumer {
                 throw ex;
             }
         }
+        // Mark as processed AFTER successful completion.
+        processedEventService.markProcessed(eventKey, EVENT_TYPE);
+
         log.info("Finished processing paymentId={}", event.paymentId());
     }
+
+    /**
+     * Invoked when a message exhausts all retries. In production this would
+     * trigger an alert, write to a monitoring system, or notify on-call.
+     * For now we log loudly with enough context to investigate.
+     */
+    public void handleDlt(@Payload PaymentRequestedEvent event,
+                          @Header(KafkaHeaders.ORIGINAL_TOPIC) String originalTopic,
+                          @Header(KafkaHeaders.EXCEPTION_MESSAGE) String exceptionMessage
+                          ){
+        log.error("DLT received event after exhausted retries: " +
+                        "paymentId={}, originalTopic={}, exception={}",
+                event.paymentId(), originalTopic, exceptionMessage);
+    }
+
+
+
 }
+

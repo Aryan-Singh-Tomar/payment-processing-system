@@ -54,17 +54,21 @@ public class PaymentProcessingService {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new PaymentNotFoundException(paymentId));
 
-        if (payment.getStatus() != PaymentStatus.PENDING) {
-            log.info("Skipping payment {}: status is {}, not PENDING. " +
-                            "Likely a duplicate event or already processed.",
-                    paymentId, payment.getStatus());
-            return false;
+        if (payment.getStatus() == PaymentStatus.PENDING) {
+            payment.setStatus(PaymentStatus.PROCESSING);
+            paymentRepository.save(payment);
+            log.info("Payment {} transitioned PENDING → PROCESSING", paymentId);
+            return true;
         }
 
-        payment.setStatus(PaymentStatus.PROCESSING);
-        paymentRepository.save(payment);
-        log.info("Payment {} transitioned PENDING → PROCESSING", paymentId);
-        return true;
+        if (payment.getStatus() == PaymentStatus.PROCESSING) {
+            log.info("Payment {} is already PROCESSING — retry attempt, proceeding with gateway call", paymentId);
+            return true;   // allow retry
+        }
+
+        // SUCCESS, FAILED, UNKNOWN — terminal, don't reprocess
+        log.info("Skipping payment {}: status is {}, terminal — not processing", paymentId, payment.getStatus());
+        return false;
     }
 
     /**
