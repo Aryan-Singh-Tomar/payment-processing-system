@@ -52,6 +52,12 @@ public class CreatePaymentRequest {
     @NotBlank(message = "idempotencyKey is required")
     @Size(min = 8, max = 128, message = "idempotencyKey must be between 8 and 128 characters")
     private String idempotencyKey;
+    @Size(max = 2048, message = "webhookUrl must be at most 2048 characters")
+    @Pattern(
+            regexp = "^(https?://).*",
+            message = "webhookUrl must start with http:// or https://"
+    )
+    private String webhookUrl;
 
     // getters and setters (unchanged from Day 4)
     public UUID getOrderId() { return orderId; }
@@ -62,4 +68,6 @@ public class CreatePaymentRequest {
     public void setCurrency(String currency) { this.currency = currency; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+    public String getWebhookUrl() { return webhookUrl; }
+    public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
 }

@@ -5,6 +5,8 @@ import com.payment.paymentsystem.entity.PaymentStatus;
 import com.payment.paymentsystem.exception.PaymentNotFoundException;
 import com.payment.paymentsystem.gateway.GatewayChargeResponse;
 import com.payment.paymentsystem.repository.PaymentRepository;
+import com.payment.paymentsystem.webhook.WebhookDeliveryService;
+import com.payment.paymentsystem.webhook.WebhookEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -34,9 +36,12 @@ public class PaymentProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentProcessingService.class);
     private final PaymentRepository paymentRepository;
+    private final WebhookDeliveryService webhookDeliveryService;
 
-    public PaymentProcessingService(PaymentRepository paymentRepository) {
+    public PaymentProcessingService(PaymentRepository paymentRepository,
+                                    WebhookDeliveryService webhookDeliveryService) {
         this.paymentRepository = paymentRepository;
+        this.webhookDeliveryService = webhookDeliveryService;
     }
 
     /**
@@ -127,7 +132,35 @@ public class PaymentProcessingService {
                     "Unhandled GatewayChargeResponse type: " + response.getClass());
         }
 
+        if (payment.getWebhookUrl() != null && !payment.getWebhookUrl().isBlank()) {
+            WebhookEvent event = buildWebhookEvent(payment);
+            webhookDeliveryService.deliver(payment.getWebhookUrl(), event);
+        }
+
     }
+
+    private WebhookEvent buildWebhookEvent(Payment payment) {
+        String eventType = switch (payment.getStatus()) {
+            case SUCCESS -> "payment.succeeded";
+            case FAILED -> "payment.failed";
+            case UNKNOWN -> "payment.unknown";
+            default -> "payment.unknown";   // unreachable; defensive
+        };
+
+        return new WebhookEvent(
+                UUID.randomUUID(),               // fresh eventId per delivery
+                eventType,
+                payment.getId(),
+                payment.getOrderId(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getStatus(),
+                payment.getGatewayPaymentId(),
+                payment.getFailureReason(),
+                OffsetDateTime.now()
+        );
+    }
+
 
 
 

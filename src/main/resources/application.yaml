@@ -83,8 +83,15 @@ app:
     max-latency-ms: 600
     timeout-duration-ms: 3000
 
+  webhook:
+    signing-secret: "dev-only-secret-rotate-in-production"
+    timeout-ms: 5000
+    max-attempts: 3
+    initial-backoff-ms: 1000
+    replay-tolerance-seconds: 300
+
 server:
-  port: 8080
+  port: 8090
 
 springdoc:
   api-docs:
