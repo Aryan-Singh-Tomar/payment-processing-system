@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,13 +37,14 @@ public class PaymentService {
     private final IdempotencyCacheService cacheService;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final PaymentEventProducer paymentEventProducer;
+    private final PaymentStateMachine stateMachine;
 
 
 
     public PaymentService(PaymentRepository paymentRepository, OrderRepository orderRepository,
                           PaymentMapper paymentMapper, PaymentPersistenceService persistenceService,
                           IdempotencyCacheService cacheService, ApplicationEventPublisher applicationEventPublisher,
-                          PaymentEventProducer paymentEventProducer) {
+                          PaymentEventProducer paymentEventProducer, PaymentStateMachine stateMachine) {
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
         this.paymentMapper = paymentMapper;
@@ -50,6 +52,7 @@ public class PaymentService {
         this.cacheService = cacheService;
         this.applicationEventPublisher = applicationEventPublisher;
         this.paymentEventProducer = paymentEventProducer;
+        this.stateMachine = stateMachine;
     }
 
     @Transactional
@@ -57,6 +60,7 @@ public class PaymentService {
         log.info("Creating payment for orderId={}, idempotencyKey={}",
                 request.getOrderId(), request.getIdempotencyKey());
 
+        // Step 1: Idempotency cache check
         Optional<PaymentResponse> cached = cacheService.get(request.getIdempotencyKey());
         if(cached.isPresent()){
             verifyCachedIntentMatches(cached.get(), request);
@@ -65,6 +69,7 @@ public class PaymentService {
             return cached.get();
         }
 
+        // Step 2: Idempotency DB check
         Optional<Payment> existing = paymentRepository.findByIdempotencyKey(request.getIdempotencyKey());
 
         if(existing.isPresent()){
@@ -73,13 +78,23 @@ public class PaymentService {
             return response;
         }
 
+        // Step 3: Order existence + payable check
         Order order = orderRepository.findById(request.getOrderId())
                 .orElseThrow(() -> new OrderNotFoundException(request.getOrderId()));
 
         validateOrderIsPayable(order);
         validatePaymentMatchesOrder(order, request);
 
+        // Step 4 (NEW Day 24): State machine check.
+        // Block creation if the order already has a non-terminal or successful payment.
+        List<Payment> existingForOrder = paymentRepository.findByOrderId(request.getOrderId());
+        stateMachine.canCreateNewPayment(existingForOrder).ifPresent((reason) -> {
+            log.warn("Rejecting payment creation for orderId={} — {}",
+                    request.getOrderId(), reason);
+            throw new InvalidPaymentRequestException(reason);
+        });
 
+        // Step 5: Create the payment.
         Payment payment = paymentMapper.toEntity(request);
         PaymentResponse response = saveOrReturnRaceWinner(payment, request.getIdempotencyKey());
 

@@ -42,3 +42,67 @@ If we mark it FAILED, the customer may be charged but the order remains unpaid.
 If we mark it SUCCESS without confirmation, we may fulfill an order without confirmed payment.
 
 UNKNOWN means the system is honest: we do not know yet, and webhook or reconciliation must resolve it.
+
+## Transitions
+
+          ┌─────────┐
+          │ PENDING │  ◄─── (entry point — created by POST /api/payments)
+          └────┬────┘
+               │ markProcessing (consumer claims event)
+               ▼
+        ┌────────────┐
+        │ PROCESSING │
+        └─────┬──────┘
+              │ recordResult (gateway returned)
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+┌───────┐ ┌───────┐ ┌───────┐
+│SUCCESS│ │FAILED │ │UNKNOWN│
+└───────┘ └───────┘ └───────┘
+(terminal — no further transitions)
+
+No transitions out of terminal states. Once a payment is in SUCCESS, FAILED, or
+UNKNOWN, no business logic can change it.
+
+## Order-Level Rule For New Payments
+
+When a `POST /api/payments` arrives, we check the order's existing payments:
+
+- If any payment is in PENDING or PROCESSING → reject (one in flight).
+- If any payment is in SUCCESS → reject (order already paid).
+- If all existing payments are in FAILED or UNKNOWN → allow (legitimate retry
+  after failure).
+- If no payments exist → allow (first attempt).
+
+## Why UNKNOWN Is Treated As Retry-Safe
+
+UNKNOWN means "we don't know if the gateway succeeded or not." There are two
+options:
+
+1. Block retries until UNKNOWN is reconciled (safer, slower).
+2. Allow retries; rely on `uniq_payments_order_success` partial unique index
+   to prevent double-success (faster, but might produce a duplicate charge
+   that gets recovered).
+
+We choose option 2. The constraint at the schema level guarantees at most one
+SUCCESS per order. If the original UNKNOWN charge eventually clears at the
+gateway and our retry also clears, exactly one of them will become SUCCESS in
+our database; the other gets recovered by `PaymentDuplicateHandler` with reason
+DUPLICATE_ORDER_SUCCESS, and refund tracking proceeds normally.
+
+This is the same belt-and-braces philosophy applied throughout the system:
+fast-path application logic + immovable schema invariant.
+
+## Defenses By Layer (Recap)
+
+| Layer | What | Where |
+|-------|------|-------|
+| 1. State machine validator | "Order already has a payment" check | PaymentService.createPayment (Day 24) |
+| 2. Idempotency unique constraint | Same idempotency key can't create two rows | payments.idempotency_key UNIQUE |
+| 3. Partial unique index | At most one SUCCESS per order | uniq_payments_order_success |
+| 4. Pessimistic / optimistic lock | Concurrent updates serialized | PaymentApprovalService / OptimisticPaymentApprovalService |
+| 5. Duplicate-success recovery | Race-loser handled cleanly | PaymentDuplicateHandler |
+| 6. Consumer-side event claim | Duplicate Kafka deliveries skipped | ProcessedEventService |
+
+Each layer protects a different failure mode. The system stays correct even
+when individual layers have bugs, because the next layer catches the violation.
