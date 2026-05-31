@@ -21,6 +21,7 @@ public class PaymentMapper {
         payment.setAmount(request.getAmount());
         payment.setCurrency(request.getCurrency());
         payment.setStatus(PaymentStatus.PENDING);
+        payment.setWebhookUrl(request.getWebhookUrl());
 
         return payment;
     }

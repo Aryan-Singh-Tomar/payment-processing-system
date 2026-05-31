@@ -52,6 +52,9 @@ public class Payment {
     @Column(name = "processed_at")
     private OffsetDateTime processedAt;
 
+    @Column(name = "webhook_url", length = 2048)
+    private String webhookUrl;
+
 
 
     @PrePersist
@@ -96,4 +99,6 @@ public class Payment {
     public Long getVersion() { return version; }
     public OffsetDateTime getProcessedAt() { return processedAt; }
     public void setProcessedAt(OffsetDateTime processedAt) { this.processedAt = processedAt; }
+    public String getWebhookUrl() { return webhookUrl; }
+    public void setWebhookUrl(String webhookUrl) { this.webhookUrl = webhookUrl; }
 }
