@@ -1,5 +1,7 @@
 package com.payment.paymentsystem.webhook;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -25,7 +27,9 @@ import java.util.HexFormat;
 public class WebhookSigner {
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
-    private static final String SIGNATURE_PREFIX = "sha256";
+    private static final String SIGNATURE_PREFIX = "sha256=";
+
+    private static final Logger log = LoggerFactory.getLogger(WebhookSigner.class);
 
     /**
      * Compute the signature for a webhook delivery.
@@ -35,8 +39,16 @@ public class WebhookSigner {
      * @param body        the JSON body that will be sent
      * @return the value to put in the X-Webhook-Signature header
      */
-    public String sign(String secret, long timestamp, String body){
-        String signedPayload = timestamp + " " + body;
+    public String sign(String secret, long timestamp, String body) {
+        String signedPayload = timestamp + "." + body;
+
+        // TEMPORARY DEBUG
+        log.info("SIGNER signedPayload length: {}", signedPayload.length());
+        log.info("SIGNER signedPayload bytes (hex): {}",
+                java.util.HexFormat.of().formatHex(signedPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        log.info("SIGNER secret bytes (hex): {}",
+                java.util.HexFormat.of().formatHex(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
         byte[] hmac = computeHmac(secret, signedPayload);
         return SIGNATURE_PREFIX + HexFormat.of().formatHex(hmac);
     }
