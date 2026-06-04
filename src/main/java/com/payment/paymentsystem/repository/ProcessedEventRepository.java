@@ -10,5 +10,7 @@ import java.util.UUID;
 @Repository
 public interface ProcessedEventRepository extends JpaRepository<ProcessedEvent, UUID> {
     Optional<ProcessedEvent> findByEventKeyAndEventType(String eventKey, String eventType);
+    void deleteByEventKeyAndEventType(String eventKey, String eventType);
+
 
 }

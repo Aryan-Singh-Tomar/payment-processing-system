@@ -79,4 +79,14 @@ public class ProcessedEventService {
             return false;
         }
     }
+
+
+    @Transactional
+    public void unmark(String eventKey, String eventType) {
+        processedEventRepository.deleteByEventKeyAndEventType(eventKey, eventType);
+        processedEventCacheService.evict(eventKey, eventType);
+        log.info("Unmarked processed event: {}:{}", eventType, eventKey);
+    }
+
+
 }

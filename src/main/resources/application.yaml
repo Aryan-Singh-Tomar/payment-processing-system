@@ -90,6 +90,12 @@ app:
     initial-backoff-ms: 1000
     replay-tolerance-seconds: 300
 
+  reconciliation:
+    stuck-threshold-seconds: 300
+    scan-interval-ms: 60000
+    max-per-sweep: 100
+    enabled: true
+
 server:
   port: 8090
 
