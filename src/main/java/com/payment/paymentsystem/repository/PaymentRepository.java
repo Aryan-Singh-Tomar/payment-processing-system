@@ -11,6 +11,7 @@ import java.util.UUID;
 public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
     List<Payment> findByOrderId(UUID orderId);
+    List<Payment> findAllByOrderId(UUID orderId);
     List<Payment> findByStatus(PaymentStatus status);
 
     // NEW — used by Day 13's race-prone approval flow
