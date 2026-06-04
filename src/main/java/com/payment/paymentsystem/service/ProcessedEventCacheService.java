@@ -44,6 +44,16 @@ public class ProcessedEventCacheService {
     }
 
 
+    public void evict(String eventKey, String eventType) {
+        try {
+            String key = buildKey(eventKey, eventType);
+            redisTemplate.delete(key);
+        } catch (Exception ex) {
+            log.warn("Failed to evict processed event cache: {}", ex.getMessage());
+        }
+    }
+
+
 
     private String buildKey(String eventKey, String eventType) {
         return KEY_PREFIX + eventType + ":" + eventKey;
