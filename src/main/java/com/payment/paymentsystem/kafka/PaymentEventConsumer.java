@@ -16,9 +16,12 @@ import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.retrytopic.DltStrategy;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /**
  * Subscribes to payment.requested. For each message:
@@ -70,8 +73,13 @@ public class PaymentEventConsumer {
     public void consume(
             @Payload PaymentRequestedEvent event,
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
-            @Header(KafkaHeaders.OFFSET) long offset
-            ) {
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Headers Map<String, Object> messageHeaders
+    ) {
+
+        log.info("Consumed event: paymentId={}, partition={}, offset={}",
+                    event.paymentId(), partition, offset);
+
         log.info("Consumed event: paymentId={}, partition={}, offset={}",
                 event.paymentId(), partition, offset);
 

@@ -11,6 +11,7 @@ import com.payment.paymentsystem.exception.OrderNotFoundException;
 import com.payment.paymentsystem.exception.PaymentNotFoundException;
 import com.payment.paymentsystem.kafka.PaymentEventProducer;
 import com.payment.paymentsystem.mapper.PaymentMapper;
+import com.payment.paymentsystem.observability.LogMasking;
 import com.payment.paymentsystem.repository.OrderRepository;
 import com.payment.paymentsystem.repository.PaymentRepository;
 import org.slf4j.Logger;
@@ -58,7 +59,7 @@ public class PaymentService {
     @Transactional
     public PaymentResponse createPayment(CreatePaymentRequest request){
         log.info("Creating payment for orderId={}, idempotencyKey={}",
-                request.getOrderId(), request.getIdempotencyKey());
+                request.getOrderId(), LogMasking.mask(request.getIdempotencyKey()));
 
         // Step 1: Idempotency cache check
         Optional<PaymentResponse> cached = cacheService.get(request.getIdempotencyKey());

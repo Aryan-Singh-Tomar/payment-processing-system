@@ -1,5 +1,6 @@
 package com.payment.paymentsystem.gateway;
 
+import com.payment.paymentsystem.observability.LogMasking;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,7 +90,7 @@ public class FakePaymentGatewayClient {
                     sleepRandomLatency();
                     String txnId = "gw_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
                     log.info("Gateway charge SUCCESS: paymentId={}, gatewayTxnId={}",
-                            request.paymentId(), txnId);
+                            request.paymentId(), LogMasking.mask(txnId));
                     return new GatewayChargeResponse.Success(
                             request.paymentId(),
                             txnId,
