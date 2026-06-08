@@ -173,9 +173,7 @@ consumer (with its dedup) will catch the duplicate work, but:
 - The producer cluster is double-loaded.
 - Log volume doubles.
 
-This is wasteful but not incorrect. Day 32's Redis distributed lock will
-solve this by serializing sweeper instances: only the instance that holds
-the lock runs the sweep.
+This is wasteful but not incorrect. The intended fix is a Redis distributed lock using SET NX PX for atomic acquisition and a Lua compare-and-delete for safe release — the standard pattern. I deferred implementation from this iteration to focus on observability and packaging; the architectural design is documented but not wired in.
 
 ### Limitation 4: No Bounded Retry
 
