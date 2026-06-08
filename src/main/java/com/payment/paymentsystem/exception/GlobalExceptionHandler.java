@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -111,17 +112,24 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(), null);
     }
 
+
+
     // -----------------------------------------------------------------
     // 500 Internal Server Error — fallback
     // -----------------------------------------------------------------
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleUnknown(
-            Exception ex, HttpServletRequest request) {
-        log.error("Unhandled exception on {}", request.getRequestURI(), ex);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR,
-                "Internal server error",
-                request.getRequestURI(), null);
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoHandlerFound(
+            NoHandlerFoundException ex,
+            HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(
+                OffsetDateTime.now(),
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                "Endpoint not found: " + req.getMethod() + " " + req.getRequestURI(),
+                req.getRequestURI(),
+                null
+        ));
     }
 
 

@@ -1,6 +1,11 @@
 spring:
   application:
     name: payment-system
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
 
   datasource:
     url: jdbc:postgresql://localhost:5432/payments
@@ -113,3 +118,39 @@ logging:
   level:
     com.payment.paymentsystem: INFO
     org.flywaydb: INFO
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Production-style: only expose what you need.
+        # Add more endpoints here as you need them (info, loggers, etc.).
+        include: health, info, metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      # Show detailed component breakdown when accessing /actuator/health
+      show-details: always
+      # Show per-component info under specific groups
+      show-components: always
+      # Enable separate liveness and readiness probes
+      probes:
+        enabled: true
+  # Capture build info into the /actuator/info endpoint
+  info:
+    env:
+      enabled: true
+    git:
+      enabled: true
+    java:
+      enabled: true
+    build:
+      enabled: true
+
+# Lets /actuator/info show metadata about this build
+info:
+  app:
+    name: payment-system
+    description: Event-driven payment processing system
+    version: 0.5-actuator
