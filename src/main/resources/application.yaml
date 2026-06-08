@@ -106,12 +106,19 @@ server:
 
 springdoc:
   api-docs:
+    enabled: true
     path: /v3/api-docs
   swagger-ui:
+    enabled: true
     path: /swagger-ui.html
-    operations-sorter: method
+    operations-sorter: alpha
     tags-sorter: alpha
+    # Group endpoints by tag in the UI (matches @Tag annotations on controllers)
     display-request-duration: true
+    try-it-out-enabled: true
+  # Don't expose internal endpoints in the Swagger UI
+  packages-to-scan: com.payment.paymentsystem.controller
+  # Show actuator endpoints separately if needed (we'll skip for now)
   show-actuator: false
 
 logging:

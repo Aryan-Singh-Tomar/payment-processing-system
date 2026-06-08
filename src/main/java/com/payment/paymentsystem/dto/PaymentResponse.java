@@ -1,6 +1,5 @@
 package com.payment.paymentsystem.dto;
 
-
 import com.payment.paymentsystem.entity.PaymentStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -8,42 +7,63 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-@Schema(description = "Payment resource returned by create and get endpoints.")
+@Schema(description = "Payment details returned after creation or status query")
 public class PaymentResponse {
 
-    @Schema(description = "Server-generated payment ID.",
-            example = "8f4d2b1a-9c3e-4d5b-bc6a-7e8f9a0b1c2d")
+    @Schema(
+            description = "System-generated payment ID",
+            example = "557c9e62-ef6e-4715-929d-25d4c77f5a76"
+    )
     private UUID id;
 
-    @Schema(description = "ID of the order this payment belongs to.",
-            example = "11111111-1111-1111-1111-111111111111")
+    @Schema(
+            description = "Order this payment was made for",
+            example = "31310001-3131-3131-3131-313131313131"
+    )
     private UUID orderId;
 
-    @Schema(description = "Amount charged.", example = "1500.00")
+    @Schema(
+            description = "Payment amount",
+            example = "1500.00"
+    )
     private BigDecimal amount;
 
-    @Schema(description = "ISO 4217 currency code.", example = "INR")
+    @Schema(
+            description = "ISO 4217 currency code",
+            example = "INR"
+    )
     private String currency;
 
-    @Schema(description = """
-            Current payment status.
-              - PENDING: created, not yet processing
-              - PROCESSING: gateway call in flight
-              - SUCCESS: confirmed by gateway (terminal)
-              - FAILED: declined by gateway (terminal)
-              - UNKNOWN: gateway timeout or ambiguous; reconciliation will resolve
-            """,
-            example = "PENDING")
+    @Schema(
+            description = """
+                    Current status of the payment.
+                    - PENDING: just created, queued for processing
+                    - PROCESSING: consumer is actively calling the gateway
+                    - SUCCESS: payment completed successfully
+                    - FAILED: gateway rejected the payment
+                    - UNKNOWN: gateway response was lost; reconciliation will resolve
+                    """,
+            example = "SUCCESS"
+    )
     private PaymentStatus status;
 
-    @Schema(description = "ISO-8601 timestamp when the payment row was created.",
-            example = "2026-04-30T14:32:01Z")
+    @Schema(
+            description = "When the payment was created",
+            example = "2026-06-08T15:03:05.488774+00:00"
+    )
     private OffsetDateTime createdAt;
 
-    public PaymentResponse() {}
+    public PaymentResponse() {
+    }
 
-    public PaymentResponse(UUID id, UUID orderId, BigDecimal amount, String currency,
-                           PaymentStatus status, OffsetDateTime createdAt) {
+    public PaymentResponse(
+            UUID id,
+            UUID orderId,
+            BigDecimal amount,
+            String currency,
+            PaymentStatus status,
+            OffsetDateTime createdAt
+    ) {
         this.id = id;
         this.orderId = orderId;
         this.amount = amount;
@@ -52,17 +72,51 @@ public class PaymentResponse {
         this.createdAt = createdAt;
     }
 
-    // getters and setters (unchanged)
-    public UUID getId() { return id; }
-    public void setId(UUID id) { this.id = id; }
-    public UUID getOrderId() { return orderId; }
-    public void setOrderId(UUID orderId) { this.orderId = orderId; }
-    public BigDecimal getAmount() { return amount; }
-    public void setAmount(BigDecimal amount) { this.amount = amount; }
-    public String getCurrency() { return currency; }
-    public void setCurrency(String currency) { this.currency = currency; }
-    public PaymentStatus getStatus() { return status; }
-    public void setStatus(PaymentStatus status) { this.status = status; }
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public UUID getId() {
+        return id;
+    }
+
+    public void setId(UUID id) {
+        this.id = id;
+    }
+
+    public UUID getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(UUID orderId) {
+        this.orderId = orderId;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public PaymentStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(PaymentStatus status) {
+        this.status = status;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }
