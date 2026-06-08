@@ -90,31 +90,46 @@ public class PaymentController {
         return ResponseEntity.ok(paymentApprovalService.approve(id));
     }
 
+    @PostMapping
     @Operation(
-            summary = "Create a new payment",
+            summary = "Create a payment",
             description = """
-                    Creates a new payment against an existing order in CREATED status.
-                    The order must exist and be payable. The payment amount and
-                    currency must match the order exactly.
+                    Creates a payment for the given order and starts asynchronous processing.
 
-                    Idempotency: each request must include an idempotencyKey.
-                    Replaying the same key with the same payload returns the original payment.
-                    Reusing the same key with a different payload returns 422.
+                    The response returns immediately with status PENDING. The payment is then
+                    processed via Kafka: the consumer calls the payment gateway and transitions
+                    the payment to SUCCESS, FAILED, or UNKNOWN.
+
+                    Idempotency: providing the same `idempotencyKey` on retry returns the
+                    original payment without creating a duplicate.
+
+                    State machine: an order can have at most one non-failed payment.
+                    Subsequent POSTs for the same order are rejected with 422 unless the
+                    previous payment failed.
                     """
     )
-    @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Payment created in PENDING status",
-                    content = @Content(schema = @Schema(implementation = PaymentResponse.class))),
-            @ApiResponse(responseCode = "400", description = "Validation failure or malformed request",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "Order not found",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "409", description = "Conflict — e.g., duplicate idempotency key (today)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "422", description = "Business rule violation (amount/currency mismatch, order not payable)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "202",
+                    description = "Payment accepted for processing",
+                    content = @Content(schema = @Schema(implementation = PaymentResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid request (missing fields, bad currency, etc.)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Order not found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "422",
+                    description = "Order already has a payment in progress or paid successfully",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
     })
-    @PostMapping
     public ResponseEntity<PaymentResponse> createPayment(
             @Valid @RequestBody CreatePaymentRequest request) {
 
