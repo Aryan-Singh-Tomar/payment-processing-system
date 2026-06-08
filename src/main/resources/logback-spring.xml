@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!--
+        Console appender that emits each log line as a JSON object.
+        Each field is a top-level key in the JSON, making it queryable
+        by any standard log aggregation tool (Datadog, Splunk, ELK, etc.).
+    -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Include thread name and logger name in every entry -->
+            <includeContext>false</includeContext>
+            <includeMdc>true</includeMdc>
+
+            <!-- Custom fields applied to every log line; identifies the service -->
+            <customFields>{"service":"payment-system"}</customFields>
+
+            <!-- Use Z-suffixed ISO timestamp for cross-timezone consistency -->
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</timestampPattern>
+        </encoder>
+    </appender>
+
+    <!--
+        Profile-aware setup:
+          - default profile (running locally): pretty plain text for readability
+          - 'json' profile (production / Docker): structured JSON
+        Activated by SPRING_PROFILES_ACTIVE=json or `mvn spring-boot:run -Dspring-boot.run.profiles=json`.
+    -->
+    <springProfile name="!json">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="json">
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- Library log levels -->
+    <logger name="org.apache.kafka" level="WARN"/>
+    <logger name="org.springframework.kafka" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="INFO"/>
+</configuration>

@@ -1,6 +1,7 @@
 package com.payment.paymentsystem.kafka;
 
 import com.payment.paymentsystem.event.PaymentRequestedEvent;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,23 +45,23 @@ public class PaymentEventProducer {
         log.info("Publishing PaymentRequestedEvent: paymentId={}, topic={}",
                 event.paymentId(), paymentRequestedTopic);
 
-        CompletableFuture<SendResult<String, Object>> future =
-                kafkaTemplate.send(paymentRequestedTopic, key, event);
+        ProducerRecord<String, Object> record = new ProducerRecord<>(
+                paymentRequestedTopic,
+                event.paymentId().toString(),
+                event
+        );
+
+        CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(record);
 
         future.whenComplete((result, ex) -> {
-            if(ex == null){
+            if (ex != null) {
+                log.error("Failed to publish event for paymentId={}: {}",
+                        event.paymentId(), ex.getMessage(), ex);
+            } else {
                 log.info("Published paymentId={} to partition={} offset={}",
                         event.paymentId(),
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset());
-            }else{
-                // Publish-after-commit failure. The payment is in the DB but
-                // no event was published. Logged loudly; reconciliation will
-                // catch any payment stuck in PENDING.
-                log.error("Failed to publish paymentId={} to Kafka. " +
-                                "Payment is in DB but no event was emitted. " +
-                                "Reconciliation will resolve.",
-                        event.paymentId(), ex);
             }
         });
     }

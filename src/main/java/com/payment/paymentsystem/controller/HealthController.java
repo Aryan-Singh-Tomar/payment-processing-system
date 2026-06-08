@@ -23,4 +23,5 @@ public class HealthController {
                 "timestamp", Instant.now().toString()
         );
     }
+
 }
