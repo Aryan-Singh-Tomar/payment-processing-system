@@ -4,6 +4,7 @@ An event-driven payment processing service built with Spring Boot, Kafka, Postgr
 
 > **Status:** v1.0.0 — feature-complete portfolio project.
 > **Author:** Aryan ([github.com/Aryan-Singh-Tomar/](https://github.com/Aryan-Singh-Tomar/))
+**[v1.0.0 Release](https://github.com/Aryan-Singh-Tomar/payment-processing-system/releases/tag/v1.0.0)** • **[Demo Video](https://drive.google.com/file/d/1_eb9r_8aFdd7gWzkY1foKu5abjk6ufCw/view?usp=sharing)** • **[Documentation](./docs)**
 
 ---
 
