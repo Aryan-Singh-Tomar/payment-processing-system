@@ -1,314 +1,310 @@
-A production-style payment processing backend built to deeply explore the
-hardest problems in real payment systems: idempotency, race conditions,
-transaction isolation, distributed coordination, async event processing,
-webhooks, and reconciliation.
+# Payment Processing System
 
-Built in deliberate daily increments with documented design decisions,
-failure-mode analysis, and trade-off discussions at each step. The repo's
-git history is part of the artifact — every commit produces something
-demoable, every week ends with something shippable.
+An event-driven payment processing service built with Spring Boot, Kafka, Postgres, and Redis. Demonstrates production-grade patterns for handling money: idempotency, state machines, distributed event processing, reconciliation, and observability.
 
-**Status:** Week 3 of 8 complete (Days 1–17). Synchronous core API,
-idempotency, and concurrency control are production-grade. Week 4
-introduces Kafka and asynchronous processing.
+> **Status:** v1.0.0 — feature-complete portfolio project.
+> **Author:** Aryan ([github.com/Aryan-Singh-Tomar/](https://github.com/Aryan-Singh-Tomar/))
+
+---
+
+## What This Is
+
+A payment service that accepts payment requests via REST, processes them asynchronously through Kafka, and integrates with a (simulated) payment gateway. Designed to be safe at the boundary where money meets distributed systems: same request never charges twice, partial failures are recoverable, and every transition is observable.
+
+Built primarily as a learning project to deeply explore the patterns required when you're building anything that handles real money or critical state.
+
+---
+
+## Key Features
+
+- **Two-layer idempotency.** Client-supplied idempotency keys checked in both Redis and Postgres. Same request always produces the same outcome — never a duplicate charge.
+- **Strict state machine.** Payments transition through PENDING → PROCESSING → SUCCESS/FAILED/UNKNOWN. Invalid transitions are rejected at both application and database layers.
+- **Event-driven processing.** API returns immediately with status PENDING; Kafka consumer drives the payment through its lifecycle asynchronously.
+- **Reconciliation sweeper.** A scheduled job catches payments stuck in non-terminal states (e.g., after a crash mid-processing) and re-emits events to recover them.
+- **Defense in depth.** Pessimistic database locks, optimistic version checks, partial unique indexes, and dedup tables work together — no single failure point can corrupt state.
+- **Production-grade observability.** Spring Boot Actuator probes (liveness, readiness), structured JSON logs with sensitive-field masking, interactive Swagger UI.
+- **Containerized stack.** Single `docker compose up` brings up the entire system with proper healthcheck-gated startup ordering.
 
 ---
 
 ## Tech Stack
 
-- **Java 17, Spring Boot 3.3.x, Maven**
-- **PostgreSQL 16** — source of truth, with Flyway migrations
-- **Redis 7** — read-side cache for idempotency, future home for distributed locks
-- **Kafka 3 (KRaft mode)** — message broker (wiring begins in Week 4)
-- **Docker Compose** — entire infrastructure reproducible with one command
-- **springdoc-openapi** — live Swagger UI at `/swagger-ui.html`
+- **Language:** Java 17
+- **Framework:** Spring Boot 3.3.4
+- **Messaging:** Apache Kafka 3 (KRaft mode, no Zookeeper)
+- **Database:** PostgreSQL 16 + Flyway migrations
+- **Cache / Idempotency store:** Redis 7
+- **Build:** Maven
+- **Containerization:** Docker, Docker Compose
+- **API docs:** OpenAPI 3 / springdoc / Swagger UI
+- **Testing:** JUnit 5, Testcontainers (real Postgres, Redis, Kafka in CI)
 
 ---
 
-## Architecture (Target)
-Client → API → Redis (cache) → PostgreSQL → Kafka → Consumer → Gateway → DB → Redis → Webhook → Reconciliation
+## Quickstart
 
-PostgreSQL is the source of truth. Redis is a speed layer and coordination
-primitive — never authoritative. Kafka decouples API latency from gateway
-processing. Webhooks correct state asynchronously. A reconciliation scheduler
-catches anything that fell through the cracks.
-
-**Currently implemented:** Client → API → Redis → PostgreSQL (synchronous).
-The async event pipeline (Kafka → Consumer → Gateway → Webhook → Reconciliation)
-is the focus of Weeks 4–6.
-
----
-
-## Quick Start
+You need only Docker installed. Java, Maven, Postgres, etc. — none of that is required on your machine.
 
 ```bash
-git clone <repo>
+git clone https://github.com/your-username/payment-system.git
 cd payment-system
-docker compose up -d
-mvn spring-boot:run
+docker compose up --build
 ```
 
-Then:
-- **Swagger UI:** http://localhost:8080/swagger-ui.html
-- **Health check:** http://localhost:8080/api/health
-- **OpenAPI spec:** http://localhost:8080/v3/api-docs
+That single command:
+- Builds the application image from the Dockerfile.
+- Starts Postgres, Redis, and Kafka with healthchecks.
+- Waits for each dependency to be healthy.
+- Starts the application.
+
+Within ~60 seconds, the system is fully up. Verify:
+
+```bash
+curl http://localhost:8090/actuator/health
+```
+
+Should return:
+```json{
+"status": "UP",
+"components": { "db": { "status": "UP" }, "redis": { "status": "UP" }, ... }
+}
+```
+
+Open Swagger UI at [http://localhost:8090/swagger-ui.html](http://localhost:8090/swagger-ui.html) to explore and test the API interactively.
 
 ---
 
-## What's Built So Far
+## Try A Payment End-To-End
 
-### Week 1 — Foundation (Days 1–7) · [`v0.1.0`](#)
+```bash
+# Insert a test order
+docker exec -i payment-postgres psql -U payments -d payments -c \
+  "INSERT INTO orders (id, customer_id, amount, currency) VALUES ('11111111-1111-1111-1111-111111111111', 'CUST-001', 1500.00, 'INR');"
 
-Bootstrap a production-shaped REST API on PostgreSQL with proper validation,
-exception handling, and live documentation.
+# Create a payment for that order
+curl -X POST http://localhost:8090/api/payments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderId": "11111111-1111-1111-1111-111111111111",
+    "amount": 1500.00,
+    "currency": "INR",
+    "idempotencyKey": "demo-payment-001"
+  }'
 
-- Docker Compose with Postgres, Redis, Kafka (KRaft mode), healthchecks, persistent volumes
-- Flyway migrations as the single source of schema truth (`ddl-auto=validate`)
-- Money-safe schema design: `NUMERIC(19,4)`, `TIMESTAMPTZ`, partial unique indexes
-- `Payment` and `Order` entities with `@Version` (for upcoming optimistic locking)
-- DTOs separated from JPA entities; Bean Validation at the boundary; business validation in the service
-- Constructor injection throughout, no `@Autowired` field injection
-- Global `@RestControllerAdvice` translating exceptions to clean `ErrorResponse` JSON
-  with correct status codes (400, 404, 405, 409, 422, 500)
-- springdoc-openapi auto-generated spec and Swagger UI from controllers and DTOs
+# Wait a moment, then verify it processed
+docker exec -i payment-postgres psql -U payments -d payments -c \
+  "SELECT id, status, gateway_payment_id FROM payments WHERE idempotency_key = 'demo-payment-001';"
+```
 
-### Week 2 — Idempotency (Days 8–11) · [`v0.2-idempotency`](#)
-
-Make the payment endpoint safe to retry. The contract: same idempotency key,
-same response, regardless of network failures or concurrent duplicates.
-
-- Two-layer pattern: PostgreSQL unique constraint (correctness) + Redis cache (speed)
-- Sequential retries: cache hit on the fast path; Postgres fallback on cache miss
-- Concurrent duplicates: handled via `DataIntegrityViolationException` catch + refetch
-- Intent-match check on replays: reused key with different payload is rejected as 422
-- Graceful degradation: Redis failures log a warning and fall through to Postgres;
-  the customer never sees a Redis-related error
-- Cache populate ordering: PostgreSQL commits first, then Redis populates
-- Documented in [`docs/idempotency.md`](docs/idempotency.md)
-
-**Notable bug found and fixed:** `UnexpectedRollbackException` after catching
-a constraint violation. Root cause: Spring marks the outer transaction
-rollback-only when any inner JPA write fails, even after the exception is
-caught. Fix: isolate the failing INSERT in its own `REQUIRES_NEW` transaction
-via a separate Spring bean. This pattern recurs in Week 3.
-
-### Week 3 — Concurrency (Days 12–17) · [`v0.3-concurrency`](#)
-
-Deliberately build a race condition, then fix it three different ways and
-document when to pick each.
-
-- **Day 12** — Transaction isolation levels theory ([`docs/isolation-levels.md`](docs/isolation-levels.md))
-- **Day 13** — Built a race condition into `PaymentApprovalService` and watched
-  it produce 200 + 409 under concurrent load. Two transactions both pass the
-  "is there a SUCCESS for this order?" check, both UPDATE, partial unique
-  index catches one. Constraint preserves data integrity; UX is broken.
-- **Day 14** — Fix with pessimistic locking (`SELECT ... FOR UPDATE` on the
-  order row). The lock target reasoning: lock the resource whose invariant
-  you're protecting, not the row you're writing. Two threads concurrent on
-  the same order serialize; loser gets clean 422 instead of 409.
-- **Day 15** — Same fix with optimistic locking via `@Version`. Honest finding:
-  the version mechanism never fires for this race because both threads modify
-  different rows. The partial unique index still does the work. Optimistic
-  locking falls back on constraint-based detection. Implementation is in
-  the codebase as the right tool for future same-row conflict scenarios.
-- **Day 17** — Three-way decision matrix ([`docs/concurrency-decisions.md`](docs/concurrency-decisions.md))
-  covering pessimistic vs optimistic vs constraint-only, with explicit
-  reasoning for the chosen approach.
-
-Three endpoints in the codebase demonstrating each approach:
-- `POST /api/payments/{id}/approve` — pessimistic DB lock (recommended for this race)
-- `POST /api/payments/{id}/approve-optimistic` — optimistic `@Version` retry
-
-The Redis distributed lock approach is deferred to Week 6 (Day 32) where it
-fits the reconciliation scheduler use case naturally — there's no DB row
-representing "the scheduler running on this instance," and a Redis lock is
-the right primitive for that coordination.
+Status should be `SUCCESS` (85%), `FAILED` (10%), or `UNKNOWN` (5%) — the fake gateway is configured with realistic failure distributions.
 
 ---
 
-## What's Coming
+## Architecture
 
-### Week 4 — Kafka & Async Processing (Days 18–23)
+## Payment Processing Flow
 
-The API stops blocking on payment processing.
+```text
+┌──────────┐      POST /api/payments       ┌─────────────────────┐
+│  Client  │ ─────────────────────────────► │  PaymentController  │
+└──────────┘ ◄────── 202 Accepted ───────── └──────────┬──────────┘
+                     payment PENDING                  │
+                                                      │ create + publish
+                                                      ▼
+                                      ┌──────────────────────────┐
+                                      │  PaymentService (TX)     │
+                                      │  - Idempotency check     │
+                                      │    Redis + PostgreSQL    │
+                                      │  - State machine check   │
+                                      │  - Insert payment row    │
+                                      │  - Publish AFTER_COMMIT  │
+                                      └────────────┬─────────────┘
+                                                   │
+                                                   ▼
+                                      ┌──────────────────────────┐
+                                      │  Kafka topic             │
+                                      │  payment.requested       │
+                                      └────────────┬─────────────┘
+                                                   │
+                                                   ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  PaymentEventConsumer                                               │
+│  - Dedup check using processed_events table                         │
+│  - Move payment from PENDING → PROCESSING using pessimistic lock     │
+│  - Call payment gateway                                             │
+│  - Move payment from PROCESSING → SUCCESS / FAILED / UNKNOWN        │
+└────────────────────────────────────────────────────────────────────┘
 
-- Kafka producer publishes `PaymentRequestedEvent` on creation
-- Consumer transitions PENDING → PROCESSING via a fake payment gateway client
-- `POST /api/payments` returns `202 Accepted` (was `201 Created`)
-- Consumer-side idempotency via a `processed_messages` table + Redis fast-path
-- Retry handling with exponential backoff
-- Dead Letter Topic for permanent failures
+┌────────────────────────────────────────────────────────────────────┐
+│  Reconciliation Sweeper                                             │
+│  Runs every 60 seconds                                              │
+│  - Finds payments stuck in PENDING / PROCESSING                     │
+│  - Re-emits events to recover them                                  │
+└────────────────────────────────────────────────────────────────────┘
+```
+```mermaid
+graph LR
+    Client[Client] -->|POST /api/payments| API[PaymentController]
+    API -->|create + publish| Service[PaymentService]
+    Service -->|TX commit + AFTER_COMMIT| Kafka[(Kafka: payment.requested)]
+    Kafka --> Consumer[PaymentEventConsumer]
+    Consumer -->|charge| Gateway[Payment Gateway]
+    Consumer -->|state transition| DB[(Postgres)]
+    Service -.->|idempotency| Redis[(Redis)]
+    Service -.->|persistence| DB
+    Scheduler[Reconciliation Sweep] -->|find stuck| DB
+    Scheduler -->|re-emit| Kafka
+```
 
-### Week 5 — Webhooks & State Machine (Days 24–28)
-
-External state corrections handled cleanly.
-
-- Formalize the payment state machine validator
-- Webhook endpoint with HMAC signature verification
-- Duplicate webhook handling
-- State correction: UNKNOWN → SUCCESS via webhook
-- Testcontainers integration test suite (Postgres + Redis + Kafka in tests)
-- End-to-end scenarios: happy path, timeout-then-webhook, timeout-then-reconciliation
-
-### Week 6 — Reconciliation (Days 29–33)
-
-The safety net for everything else.
-
-- `@Scheduled` job querying stuck PROCESSING and UNKNOWN payments
-- Reconciliation audit endpoint
-- Redis distributed lock to ensure exactly one instance runs the scheduler at a time
-- Stress testing under simulated failure scenarios
-
-### Week 7 — Observability (Days 34–38)
-
-Make the system debuggable.
-
-- Structured logging with SLF4J + MDC correlation IDs
-- Request/response filter with sensitive-field masking
-- Correlation ID propagation through Kafka message headers
-- Spring Boot Actuator with custom health indicators
-- Swagger polish
-
-### Week 8 — Docker, README & Showcase (Days 39–42)
-
-The final polish.
-
-- Multi-stage Dockerfile for the application
-- Full `docker-compose.yml` with health checks and seed data
-- Architecture diagrams and demo script
-- Final tag `v1.0.0`
+State storage:
+- **Postgres** — source of truth for payments, orders, processed_events. ACID guarantees.
+- **Redis** — idempotency response cache (fast hot path before hitting DB).
+- **Kafka** — event log between API and processing layers; enables async, partitioning, and retry topics.
 
 ---
 
 ## Design Decisions
 
-Architectural reasoning is documented separately. Each file covers a specific
-concern with the rationale behind the choice.
+This section is the heart of the README. Each entry is a hard problem I encountered and how I solved it.
 
-- **[Concurrency: three approaches to the same race](docs/concurrency-decisions.md)** —
-  pessimistic vs optimistic vs constraint-only, with a decision matrix
-- **[Transaction isolation levels](docs/isolation-levels.md)** —
-  what Read Committed does and doesn't protect against
-- **[Idempotency: PostgreSQL truth + Redis cache](docs/idempotency.md)** —
-  two-layer pattern with graceful degradation
-- **[Payment state machine](docs/payment-state-machine.md)** —
-  valid transitions and the role of `UNKNOWN`
+### 1. Idempotency Across Two Boundaries
 
----
+**Problem:** Network retries, client double-clicks, and at-least-once Kafka delivery can all cause the same payment request to arrive multiple times. The system must charge exactly once.
 
-## Notable Engineering Lessons Surfaced
+**Solution:** Two-layer idempotency.
+- **API boundary:** Client supplies an `idempotencyKey`. PaymentService checks Redis first (fast); on miss, checks Postgres unique constraint on `(idempotency_key)`. The constraint ensures atomicity: even if two threads race past the cache check, only one INSERT succeeds.
+- **Kafka boundary:** Consumer maintains a `processed_events` table keyed by event ID. Before processing, it checks this table. After processing, it records the event ID. Duplicate Kafka deliveries hit the dedup check and skip.
 
-These are the moments where the project produced a real engineering lesson —
-the kind you remember because you debugged it, not because you read it.
+### 2. Idempotency-Reconciliation Conflict
 
-**`UnexpectedRollbackException` after catch (Day 10).** Catching a
-`DataIntegrityViolationException` doesn't undo Spring's rollback-only flag
-on the outer transaction. The catch block ran, the refetch returned
-correctly, then Spring threw at commit time because the transaction was
-already marked dead. Fix: isolate the failing INSERT in its own
-`REQUIRES_NEW` transaction via a separate bean. The pattern: Spring's
-`@Transactional` is enforced by proxies; crossing a bean boundary is what
-opens a fresh transaction.
+**Problem:** The `processed_events` dedup table is also a barrier to reconciliation. When the reconciliation sweep re-emits events for stuck payments, the consumer sees the event ID in `processed_events` and skips it — the very re-processing we want is prevented by the dedup.
 
-**`BigDecimal` deserialization in Redis (Day 11).** Jackson's polymorphic
-type validator was configured to allow project packages, `java.util`, and
-`java.time` — but not `java.math`. Cached `PaymentResponse` objects failed
-to deserialize because `BigDecimal` is in `java.math`. The graceful-degradation
-fallback worked perfectly (warn log, Postgres fallback), so the bug was
-visible without being customer-impacting. The fix was one line in
-`RedisConfig`. The lesson: graceful degradation pays off even when you
-don't expect it to.
+**Solution:** Explicit `unmark()` operation. The reconciliation service deletes the row from `processed_events` (and evicts the Redis cache entry) before re-publishing. Documented trade-off: if the original processing actually succeeded but didn't record `processed_at`, the unmark allows double-execution. Mitigated in production by gateway-side idempotency keys; for this project, the risk is documented in `docs/reconciliation-design.md`.
 
-**Lock target reasoning (Day 14).** Two concurrent approvals were on
-different payments under the same order. Locking individual payment rows
-wouldn't coordinate (different threads lock different rows). The protected
-invariant ("at most one SUCCESS per order") belongs to the order. Lock
-the order. This generalizes: the lock target is the resource whose invariant
-you're protecting, not the row you're writing.
+### 3. State Machine Enforced At Two Layers
 
-**Optimistic locking doesn't shine for cross-row invariants (Day 15).** The
-`@Version` mechanism protects single-row update conflicts. For a cross-row
-business rule like the order-level invariant, two threads each successfully
-update their own payment rows — neither version fails — and the partial
-unique index is what actually catches the conflict. Useful tool, wrong
-fit for this race. Documented honestly in the decision matrix.
+**Problem:** A payment must not transition from SUCCESS back to PENDING, regardless of bugs or race conditions.
+
+**Solution:** State machine rules checked in Java (`PaymentStateMachine`) AND enforced by database constraints (partial unique indexes ensuring at most one non-failed payment per order). Two failure modes have to occur simultaneously to corrupt state.
+
+### 4. Async Boundary At The API
+
+**Problem:** Calling the payment gateway synchronously from the HTTP request couples request latency to gateway response time. A 5-second gateway call holds an HTTP connection open. Worse, if the gateway times out, the API has to decide what to tell the client — and a wrong answer is unrecoverable.
+
+**Solution:** Kafka in the middle. POST creates the payment and publishes an event; consumer calls the gateway later. API returns 202 with status PENDING immediately. Client gets a fast acknowledgment; the long-running work happens elsewhere.
+
+### 5. Reconciliation As A Safety Net
+
+**Problem:** What if the consumer crashes mid-processing, after starting the state transition but before recording the result? The payment is stuck in PROCESSING forever.
+
+**Solution:** A scheduled sweeper job finds payments older than a threshold in non-terminal states and re-emits events. Combined with the `unmark()` pattern, this catches and recovers stuck payments without operator intervention. The trade-off: PROCESSING is ambiguous (gateway might have already been called), so this design accepts a small double-execution risk in exchange for automatic recovery. Production fix would use gateway-side query-by-payment-id to determine actual state before retry.
+
+### 6. Configuration Externalized For Multi-Environment Deployment
+
+**Problem:** Same JAR needs to run in local dev, staging, and production with different DB hosts, Kafka brokers, etc.
+
+**Solution:** `application.yaml` provides defaults for local dev (`localhost`). Docker Compose overrides via environment variables (`SPRING_DATASOURCE_URL`, etc.) for containerized deployment. No code changes between environments; the same image runs everywhere with config injected at deploy time.
 
 ---
 
-## Code Quality Notes
+## API Reference
 
-- No `@Autowired` field injection. All dependencies via constructor.
-- No service interfaces unless there are multiple implementations.
-- No premature abstractions (no MapStruct for one mapper, no Lombok overuse).
-- Bean Validation at the DTO boundary; business validation in services.
-- `BigDecimal.compareTo()` for money equality, never `.equals()`.
-- DTOs separate from entities; entities never leak through the API.
-- Indexes added with the schema, not retrofitted later.
-- Sensitive logging avoided (constraint names, raw exception messages stay internal).
+Interactive Swagger UI: [http://localhost:8090/swagger-ui.html](http://localhost:8090/swagger-ui.html)
+
+Key endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/payments` | Create a payment (idempotent via `idempotencyKey`) |
+| `GET` | `/actuator/health` | Overall service health |
+| `GET` | `/actuator/health/liveness` | Kubernetes-style liveness probe |
+| `GET` | `/actuator/health/readiness` | Kubernetes-style readiness probe |
+| `GET` | `/actuator/metrics` | JVM, HTTP, Kafka, and connection pool metrics |
+| `GET` | `/v3/api-docs` | Machine-readable OpenAPI spec |
+
+---
+
+## Observability
+
+- **Structured JSON logs** — Enable with `SPRING_PROFILES_ACTIVE=json`. Each log line is a queryable JSON object ready for Datadog/Splunk/ELK.
+- **Sensitive field masking** — Idempotency keys and gateway transaction IDs are masked in logs (`abcd****wxyz`) to prevent leakage through log shipping.
+- **Spring Boot Actuator** — Health, liveness, readiness, info, and metrics endpoints. JVM metrics, HTTP request timing, Kafka client metrics, Hikari connection pool stats all collected automatically.
+- **OpenAPI / Swagger UI** — Self-documenting API with example values and error code documentation.
 
 ---
 
 ## Project Structure
 
 ```text
-src/main/java/com/payment/paymentsystem/
-├── PaymentSystemApplication.java
-├── config/
-│   ├── RedisConfig.java
-│   └── OpenApiConfig.java
-├── controller/
-│   ├── PaymentController.java
-│   └── HealthController.java
-├── dto/
-│   ├── CreatePaymentRequest.java
-│   ├── PaymentResponse.java
-│   └── ErrorResponse.java
-├── entity/
-│   ├── Payment.java
-│   ├── Order.java
-│   ├── PaymentStatus.java
-│   └── OrderStatus.java
-├── exception/
-│   ├── GlobalExceptionHandler.java
-│   └── Domain exceptions
-├── mapper/
-│   └── PaymentMapper.java
-├── repository/
-│   ├── PaymentRepository.java
-│   └── OrderRepository.java
-└── service/
-    ├── PaymentService.java
-    ├── PaymentApprovalService.java
-    ├── OptimisticPaymentApprovalService.java
-    ├── IdempotencyCacheService.java
-    ├── PaymentPersistenceService.java
-    └── PaymentApprovalTransaction.java
-
-src/main/resources/
-├── application.yaml
-└── db/migration/
-    ├── V1__create_orders_and_payments.sql
-    └── V2__add_indexes_and_constraints.sql
-
-docs/
-├── concurrency-decisions.md
-├── idempotency.md
-├── isolation-levels.md
-└── payment-state-machine.md
+payment-system/
+├── src/main/java/com/payment/paymentsystem/
+│   ├── config/                  # OpenAPI and other config beans
+│   ├── controller/              # REST endpoints
+│   ├── dto/                     # Request/response shapes with @Schema annotations
+│   ├── entity/                  # JPA entities
+│   ├── event/                   # Kafka event types
+│   ├── exception/               # GlobalExceptionHandler
+│   ├── gateway/                 # Simulated payment gateway
+│   ├── kafka/                   # Producer + consumer
+│   ├── reconciliation/          # Scheduled sweep job
+│   ├── repository/              # Spring Data JPA repositories
+│   ├── service/                 # PaymentService, ProcessedEventService
+│   └── observability/           # LogMasking utility
+├── src/main/resources/
+│   ├── application.yaml         # Default config (localhost)
+│   ├── logback-spring.xml       # Plain text + JSON profile-aware logging
+│   └── db/migration/            # Flyway V1–V5 migrations
+├── src/test/java/.../e2e/       # Five integration tests using Testcontainers
+├── docs/                        # Architecture & design docs
+│   ├── concurrency-decisions.md
+│   ├── idempotency.md
+│   ├── isolation-levels.md
+│   ├── payment-state-machine.md
+│   └── reconciliation-design.md
+├── Dockerfile                   # Multi-stage build (JDK builder, JRE runtime)
+├── docker-compose.yml           # Full stack with healthchecks
+└── pom.xml
 ```
+
 ---
 
-## Why This Project Exists
+## Testing
 
-This is a learning project, built to internalize the hard problems of payment
-systems through deliberate practice rather than abstract reading. Each day
-produces something demoable, each week ends with something shippable. The
-commits are the artifact; the documentation is part of the deliverable.
+Five integration tests run against real Postgres, Redis, and Kafka via Testcontainers:
 
-The goal is not to build a payment processor that competes with Stripe. The
-goal is to deeply understand the problems Stripe and Razorpay solve every
-day — idempotency, concurrency, eventual consistency, reconciliation — and
-to be able to discuss them with the depth that comes from having built them.
+- `PaymentHappyPathIntegrationTest` — Full request → Kafka → consumer → terminal state.
+- `PaymentIdempotencyIntegrationTest` — Same idempotency key returns same payment, single DB row.
+- `PaymentDuplicateDeliveryIntegrationTest` — Same Kafka event delivered twice produces single processing.
+- `PaymentStateMachineIntegrationTest` — Second payment for an order is rejected with 422.
+- `PaymentReconciliationIntegrationTest` — Stuck payment recovered by reconciliation sweep.
+
+Run:
+```bash
+mvn test -Dtest='Payment*IntegrationTest'
+```
+
+---
+
+## Known Limitations And Future Work
+
+Deliberately scoped out of this iteration; each documented as a trade-off rather than a missing requirement:
+
+- **No multi-instance lock on reconciliation sweep.** Two replicas would both run the sweep; design documented in `docs/reconciliation-design.md` with the Redis SET NX PX pattern as the planned solution.
+- **No end-to-end correlation IDs.** Tracing across the Kafka boundary requires careful MDC propagation through producer callbacks and consumer thread handoffs; deferred for scope. Each component logs independently.
+- **No webhook delivery retry hardening.** Outbound webhooks fire once; production would need a separate retry queue with exponential backoff.
+- **Cache returns stale status.** The idempotency response cache returns the payment as it was at creation time (PENDING). A separate `GET /api/payments/{id}` endpoint would read fresh from the database — deliberately not implemented to keep the surface area focused.
+
+---
+
+## What I Learned
+
+A summary of the senior-flavored ideas this project taught me:
+
+1. **Idempotency requires defense at every boundary**, not just the most obvious one. API-side checks alone are insufficient if the message broker can deliver duplicates.
+2. **Two correct patterns can become incorrect when combined.** The dedup table and reconciliation each work independently; together they create a deadlock the system has to explicitly unwind.
+3. **State machines belong in both code and database.** Application-layer validation alone is fragile against race conditions; database constraints alone can't express temporal rules. Both layers reinforce each other.
+4. **Test the failure modes, not just the happy path.** Integration tests for idempotency, duplicate delivery, and reconciliation surfaced bugs that unit tests would never have caught.
+5. **Configuration is part of the deployment story.** Hardcoded `localhost` is the most common reason a working JAR breaks the moment it's containerized.
 
 ---
 
